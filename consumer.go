@@ -42,7 +42,7 @@ func (*Nsq) Reader(topic, channel string, maxInFlight, partition int) *nsq.Consu
 	}
 	consumer, err := nsq.NewConsumer(topic, channel, cfg)
 	if err != nil {
-		ReportError(err, "new consumer object failed")
+		ReportError(err, " new consumer object failed topic "+topic+" channel: "+channel)
 		return nil
 	}
 	consumer.SetLogger(log.New(os.Stderr, "", log.LstdFlags), nsq.LogLevelError)
@@ -51,11 +51,11 @@ func (*Nsq) Reader(topic, channel string, maxInFlight, partition int) *nsq.Consu
 	return consumer
 }
 func (*Nsq) Consume(
-	ctx context.Context, lookups []string, reader *nsq.Consumer, limit int) string {
-	return ConsumeInternal(ctx, lookups, reader, limit)
+	ctx context.Context, lookups []string, reader *nsq.Consumer, limit, rfor int) string {
+	return ConsumeInternal(ctx, lookups, reader, limit, rfor)
 }
 
-func ConsumeInternal(ctx context.Context, lookups []string, reader *nsq.Consumer, concurrency int) string {
+func ConsumeInternal(ctx context.Context, lookups []string, reader *nsq.Consumer, concurrency, rfor int) string {
 	handler := MyTestHandler{
 		ctx: ctx,
 	}
@@ -65,6 +65,7 @@ func ConsumeInternal(ctx context.Context, lookups []string, reader *nsq.Consumer
 		ReportError(err, "Connect to nsq failed")
 		return ""
 	}
+	time.Sleep(time.Duration(rfor) * time.Minute)
 	return ""
 }
 
