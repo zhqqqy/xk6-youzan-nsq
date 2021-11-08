@@ -1,5 +1,5 @@
 # xk6-youzan-nsq
-presstest for youzan nsq
+Pressure test for youzan nsq
 
 ## 编译k6
 ### 本地编译
