@@ -13,6 +13,7 @@ import (
 	"go.k6.io/k6/lib"
 	"log"
 	"os"
+	"time"
 )
 
 /**
@@ -60,15 +61,23 @@ func (*Nsq) Consume(lookups []string, topic, channel string, maxInFlight, partit
 	return consumer
 }
 
-func (*Nsq) Received(ctx context.Context, qos, timeout uint) nsq.Message {
+func (*Nsq) Received(ctx context.Context, timeout uint) nsq.Message {
 	state := lib.GetState(ctx)
-
+	if timeout == 0 {
+		timeout = 500
+	}
 	if state == nil {
 		common.Throw(common.GetRuntime(ctx), ErrorState)
-		return nsq.Message{}
+
 	}
-	msg := <-recieved
-	return msg
+	select {
+	case msg := <-recieved:
+		return msg
+	case <-time.After(time.Duration(timeout) * time.Millisecond):
+		return nsq.Message{}
+
+	}
+
 }
 
 func (*Nsq) Close(ctx context.Context, client *nsq.Consumer, timeout uint) {

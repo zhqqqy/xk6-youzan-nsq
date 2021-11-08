@@ -1,9 +1,3 @@
-/*
-
-This is a k6 test script that imports the xk6-kafka and
-tests Kafka with a 200 JSON messages per iteration.
-
-*/
 import {check} from 'k6';
 import {Counter, Rate, Trend} from 'k6/metrics';
 import {close, consume, received,} from 'k6/x/nsq'; // import mqtt plugin
@@ -13,10 +7,17 @@ const nsqTopic = "sinker_test";
 const nsqChannel = "sinker";
 
 const consumer = consume(lookupAddress, nsqTopic, nsqChannel);
-let subscribe_trend = new Trend('subscribe_time', true);
 
+// 新建一个类型为 Counter 名为 my_counter 的自定制指标
 let myCounter = new Counter('my_counter');
 let myRate = new Rate("my_rate");
+//导出一个选项，设置vus(虚拟用户数为 2)
+export let options = {
+    vus: 2,
+    duration: '100s',
+
+};
+
 export default function () {
     let startTime = new Date().getTime();
     let messages = received(lookupAddress, consumer, 10, 3);
@@ -25,7 +26,6 @@ export default function () {
     });
     myCounter.add(1)
     myRate.add(paased)
-    subscribe_trend.add(new Date().getTime() - startTime);
 }
 
 export function teardown(data) {
