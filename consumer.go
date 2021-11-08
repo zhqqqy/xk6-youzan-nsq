@@ -7,14 +7,12 @@ package xk6_youzan_nsq
 
 import (
 	"context"
-	"errors"
 	"github.com/youzan/go-nsq"
+	"go.k6.io/k6/js/common"
 	"go.k6.io/k6/js/modules"
 	"go.k6.io/k6/lib"
-	"go.k6.io/k6/stats"
 	"log"
 	"os"
-	"time"
 )
 
 /**
@@ -28,10 +26,13 @@ func init() {
 
 type Nsq struct{}
 type MyTestHandler struct {
-	ctx context.Context
+	ctx     context.Context
+	message chan nsq.Message
 }
 
-func (*Nsq) Reader(topic, channel string, maxInFlight, partition int) *nsq.Consumer {
+var recieved = make(chan nsq.Message)
+
+func (*Nsq) Consume(lookups []string, topic, channel string, maxInFlight, partition int) *nsq.Consumer {
 	cfg := nsq.NewConfig()
 
 	if maxInFlight == 0 {
@@ -47,73 +48,36 @@ func (*Nsq) Reader(topic, channel string, maxInFlight, partition int) *nsq.Consu
 	}
 	consumer.SetLogger(log.New(os.Stderr, "", log.LstdFlags), nsq.LogLevelError)
 	log.SetPrefix("[bench_reader] ")
-
-	return consumer
-}
-func (*Nsq) Consume(
-	ctx context.Context, lookups []string, reader *nsq.Consumer, limit, rfor int) string {
-	return ConsumeInternal(ctx, lookups, reader, limit, rfor)
-}
-
-func ConsumeInternal(ctx context.Context, lookups []string, reader *nsq.Consumer, concurrency, rfor int) string {
-	handler := MyTestHandler{
-		ctx: ctx,
-	}
-	reader.AddConcurrentHandlers(&handler, concurrency)
-	err := reader.ConnectToNSQLookupds(lookups)
+	consumer.AddConcurrentHandlers(nsq.HandlerFunc(func(m *nsq.Message) error {
+		recieved <- *m
+		return nil
+	}), 10)
+	err = consumer.ConnectToNSQLookupds(lookups)
 	if err != nil {
 		ReportError(err, "Connect to nsq failed")
-		return ""
+		return nil
 	}
-	time.Sleep(time.Duration(rfor) * time.Minute)
-	return ""
+	return consumer
 }
 
-func (h *MyTestHandler) HandleMessage(message *nsq.Message) error {
-	return ReportReaderStats(h.ctx, message)
-
-}
-
-func ReportReaderStats(ctx context.Context, currentStats *nsq.Message) error {
+func (*Nsq) Received(ctx context.Context, qos, timeout uint) nsq.Message {
 	state := lib.GetState(ctx)
-	err := errors.New("state is nil")
 
 	if state == nil {
-		ReportError(err, "Cannot determine state")
-		return err
+		common.Throw(common.GetRuntime(ctx), ErrorState)
+		return nsq.Message{}
 	}
+	msg := <-recieved
+	return msg
+}
 
-	tags := make(map[string]string)
-	tags["nsqdAddress"] = currentStats.NSQDAddress
-	tags["partition"] = currentStats.Partition
+func (*Nsq) Close(ctx context.Context, client *nsq.Consumer, timeout uint) {
+	state := lib.GetState(ctx)
+	if state == nil {
+		common.Throw(common.GetRuntime(ctx), ErrorState)
+		return
+	}
+	client.Stop()
+	return
 
-	now := time.Now()
-
-	stats.PushIfNotDone(ctx, state.Samples, stats.Sample{
-		Time:   now,
-		Metric: ReaderAttempt,
-		Tags:   stats.IntoSampleTags(&tags),
-		Value:  float64(currentStats.Attempts),
-	})
-
-	stats.PushIfNotDone(ctx, state.Samples, stats.Sample{
-		Time:   now,
-		Metric: ReaderMessageID,
-		Tags:   stats.IntoSampleTags(&tags),
-		Value:  float64(nsq.GetNewMessageID(currentStats.ID[:])),
-	})
-
-	stats.PushIfNotDone(ctx, state.Samples, stats.Sample{
-		Time:   now,
-		Metric: ReaderTimestamp,
-		Tags:   stats.IntoSampleTags(&tags),
-		Value:  float64(currentStats.Timestamp),
-	})
-	stats.PushIfNotDone(ctx, state.Samples, stats.Sample{
-		Time:   now,
-		Metric: ReaderBytes,
-		Tags:   stats.IntoSampleTags(&tags),
-		Value:  float64(len(currentStats.Body)),
-	})
-	return nil
 }
